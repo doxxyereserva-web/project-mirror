@@ -142,7 +142,10 @@ async function compositeRegion(
   });
 }
 
-async function normalizeTo585x559(b64: string): Promise<Blob> {
+async function normalizeTo585x559(
+  b64: string,
+  alpha: AlphaOptions | null,
+): Promise<{ blob: Blob; transparentPct: number }> {
   const img = new Image();
   img.src = `data:image/png;base64,${b64}`;
   await new Promise((res, rej) => {
@@ -152,23 +155,35 @@ async function normalizeTo585x559(b64: string): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = TARGET_W;
   canvas.height = TARGET_H;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.clearRect(0, 0, TARGET_W, TARGET_H);
   const scale = Math.max(TARGET_W / img.width, TARGET_H / img.height);
   const w = img.width * scale;
   const h = img.height * scale;
   const x = (TARGET_W - w) / 2;
   const y = (TARGET_H - h) / 2;
-  ctx.imageSmoothingEnabled = true;
+  // Nearest-neighbour keeps the chroma key pure (smoothing would create
+  // magenta-to-fabric gradients that survive the key).
+  ctx.imageSmoothingEnabled = !alpha;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, x, y, w, h);
-  return new Promise<Blob>((resolve, reject) => {
+
+  let transparentPct = 0;
+  if (alpha) {
+    const data = ctx.getImageData(0, 0, TARGET_W, TARGET_H);
+    transparentPct = processAlpha(data, alpha).transparentPct;
+    ctx.putImageData(data, 0, 0);
+  }
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("Falha ao gerar PNG"))),
       "image/png",
     );
   });
+  return { blob, transparentPct };
 }
+
 
 function slugify(s: string): string {
   return s
