@@ -2,7 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { TEMPLATE_B64 } from "@/lib/api/roblox-template.server";
 
 type ModelChoice = "gemini" | "gpt";
-type Flags = { nac?: boolean; rpb?: boolean; rmtpc?: boolean; dra?: boolean };
+type Flags = {
+  nac?: boolean;
+  rpb?: boolean;
+  rmtpc?: boolean;
+  dra?: boolean;
+  chroma?: boolean;
+  limb?: boolean;
+  learn?: boolean;
+};
 type InpaintRegion =
   | "torso"
   | "right_arm"
@@ -15,12 +23,15 @@ type Body = {
   references?: string[]; // data URLs
   model?: ModelChoice;
   flags?: Flags;
+  /** Distilled rules learned from the user's previous feedback. */
+  learned?: string[];
   inpaint?: {
     region: InpaintRegion;
     baseImage: string;
     refinement?: string;
   };
 };
+
 
 
 const TEMPLATE_RULES = `MANDATORY ROBLOX CLASSIC CLOTHING TEMPLATE.
