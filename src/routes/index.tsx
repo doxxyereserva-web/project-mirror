@@ -39,7 +39,28 @@ type ModelChoice = "gemini" | "gpt";
 const MODEL_STORAGE_KEY = "rogen.model";
 const FLAGS_STORAGE_KEY = "rogen.flags";
 
-type Flags = { nac: boolean; rpb: boolean; rmtpc: boolean; dra: boolean };
+type Flags = {
+  nac: boolean;
+  rpb: boolean;
+  rmtpc: boolean;
+  dra: boolean;
+  chroma: boolean;
+  limb: boolean;
+  learn: boolean;
+  catalog: boolean;
+};
+
+const DEFAULT_FLAGS: Flags = {
+  nac: true,
+  rpb: true,
+  rmtpc: true,
+  dra: true,
+  chroma: true,
+  limb: true,
+  learn: true,
+  catalog: true,
+};
+
 
 type InpaintRegion = "torso" | "right_arm" | "left_arm" | "right_leg" | "left_leg";
 
