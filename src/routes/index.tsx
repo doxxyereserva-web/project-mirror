@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Loader2, Upload, X, Download, Shirt, Wand2, Copy, Check, Zap, Sparkles, ShieldCheck, Layers, Eye, ScanSearch, Paintbrush } from "lucide-react";
+import { Loader2, Upload, X, Download, Shirt, Wand2, Copy, Check, Zap, Sparkles, ShieldCheck, Layers, Eye, ScanSearch, Paintbrush, Search, Brain, Ruler, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { processAlpha, DEFAULT_ALPHA, type AlphaOptions } from "@/lib/alpha-engine";
+import { ISSUES, loadLearned, recordIssues, clearLearned, learnedRuleStrings, type IssueId, type LearnedRule } from "@/lib/learning";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
