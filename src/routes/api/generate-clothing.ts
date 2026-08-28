@@ -285,13 +285,23 @@ export const Route = createFileRoute("/api/generate-clothing")({
         const draActive = !!flags.dra && userRefs.length > 0;
         const inpaint = body.inpaint;
         const inpaintActive = !!inpaint?.baseImage && !!inpaint?.region;
+        const learned = (body.learned ?? [])
+          .map((r) => String(r).trim())
+          .filter(Boolean)
+          .slice(-14);
+        const learnActive = !!flags.learn && learned.length > 0;
         const flagBlocks = [
+          flags.chroma ? CHROMA_BLOCK : "",
+          flags.limb ? LIMB_BLOCK : "",
           flags.nac ? NAC_BLOCK : "",
-          flags.rpb ? RPB_BLOCK : "",
+          flags.rpb && !flags.chroma ? RPB_BLOCK : "",
           flags.rmtpc ? RMTPC_BLOCK : "",
           draActive ? DRA_BLOCK : "",
+          userRefs.length ? CATALOG_NOTE : "",
+          learnActive ? LEARN_BLOCK(learned) : "",
           inpaintActive ? INPAINT_BLOCK(inpaint!.region, inpaint!.refinement ?? "") : "",
         ].filter(Boolean).join("\n\n");
+
 
         // Extra grid-discipline nudge for GPT-Image (tends to stylize away from the template).
         const GPT_EXTRA = `\n\nSTRICT GRID LOCK (model-specific): The first attached image IS the canonical 585x559 UV template. Reproduce its outer composition, dotted cell borders, label positions, and aspect ratio with PIXEL-LEVEL fidelity. Do NOT crop, rescale, or recompose. Only fill the empty cells. Keep everything outside the labeled cells visually identical to the template image.`;
