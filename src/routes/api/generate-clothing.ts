@@ -2,7 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { TEMPLATE_B64 } from "@/lib/api/roblox-template.server";
 
 type ModelChoice = "gemini" | "gpt";
-type Flags = { nac?: boolean; rpb?: boolean; rmtpc?: boolean; dra?: boolean };
+type Flags = {
+  nac?: boolean;
+  rpb?: boolean;
+  rmtpc?: boolean;
+  dra?: boolean;
+  chroma?: boolean;
+  limb?: boolean;
+  learn?: boolean;
+};
 type InpaintRegion =
   | "torso"
   | "right_arm"
@@ -15,12 +23,15 @@ type Body = {
   references?: string[]; // data URLs
   model?: ModelChoice;
   flags?: Flags;
+  /** Distilled rules learned from the user's previous feedback. */
+  learned?: string[];
   inpaint?: {
     region: InpaintRegion;
     baseImage: string;
     refinement?: string;
   };
 };
+
 
 
 const TEMPLATE_RULES = `MANDATORY ROBLOX CLASSIC CLOTHING TEMPLATE.
@@ -221,6 +232,36 @@ ${HEAVY_TRAINING}
 ${FINAL_CHECKLIST}
 Style rules: flat 2D painted texture, visible fabric/material details PAINTED ON (stitching, rivets, weave drawn as 2D art — never modeled in 3D), perfectly straight panel edges aligned to the template grid, no shading bleed across cells, no avatar redraw, NO 3D RENDER, NO PHOTOGRAPHY, NO CHARACTER ILLUSTRATION, NO SCENE. Output IS the upload-ready 585x559 PNG-32 (REAL alpha channel — non-cell area and ALL requested cut-outs MUST be alpha = 0, never white/gray/skin) with the SAME outer composition as the official template image provided.`;
 
+const CHROMA_BLOCK = `CHROMA ALPHA KEY (HARD RULE — OVERRIDES ANY OTHER TRANSPARENCY INSTRUCTION):
+- You CANNOT output a real alpha channel, so DO NOT TRY. Instead, paint EVERY pixel that must end up transparent in PURE CHROMA MAGENTA, exact RGB (255, 0, 255) / hex #FF00FF. A post-process step keys that exact color out and replaces it with true alpha = 0.
+- Paint #FF00FF (never white, never gray, never light beige, never skin, never a checkerboard, never a "transparent-looking" pattern) in:
+  [a] the ENTIRE area outside the labeled garment cells (all template background, margins, gutters between cells),
+  [b] the whole upper TORSO panel group when generating PANTS,
+  [c] every region the brief marks as cut-out: short sleeves below the hem, sleeveless/tank arm cells, necklines/decote, crop-top area below the hem, shorts below the cuff, holes, off-shoulder gaps.
+- The magenta MUST be flat, 100% saturated, uniform #FF00FF with NO gradient, NO shading, NO noise, NO texture, NO antialias gradient bleeding far into the garment. Hard, crisp edges between garment and magenta.
+- NEVER use magenta as a design color anywhere in the garment. If the brief asks for pink/magenta clothing, use a clearly different tone (e.g. #E255C8 or #FF3399) so the key does not eat the garment.
+- BANNED (instant rejection): white background, gray background, checkerboard pattern, "PNG transparency illustration", any painted imitation of transparency. Only #FF00FF means transparent.
+- The dotted template guide lines, labels, logo and the small isometric avatar diagrams should ALSO be replaced by #FF00FF — the final upload must contain the garment panels only, everything else keyed out.`;
+
+const LIMB_BLOCK = `LIMB GEOMETRY LOCK (HARD RULE — fixes the #1 defect: broken sleeves, cuffs, wrists, hand holes and leg panels):
+- Each limb is an unfolded rectangular BOX with SIX faces: FRONT, BACK, LEFT SIDE, RIGHT SIDE, TOP (shoulder cap / hip top), BOTTOM (wrist-hand opening / ankle-foot opening). All six MUST be painted consistently; a missing or mismatched face is what produces the "bugged sleeve" look on the avatar.
+- The four LONG faces of an arm (FRONT, BACK, both SIDES) all run shoulder → wrist in the SAME direction. The shoulder end of all four must share the same color/pattern row, and the wrist end of all four must share the same cuff row, at the SAME height in pixels. If a stripe or cuff band sits 12 px from the bottom on one face, it sits 12 px from the bottom on the other three.
+- WRIST / HAND OPENING: the ARM BOTTOM square is the hole the hand comes out of. For a normal long sleeve it is the INSIDE of the cuff — paint it as the darker inner-fabric tone of the sleeve, ringed by the cuff color. NEVER paint a hand, fingers, skin, a glove seam, or garment art there. For short sleeves / sleeveless it is fully keyed out (magenta / alpha 0).
+- SHOULDER CAP: the ARM TOP square is seen from above; it must continue the shoulder color of the torso side it attaches to, so the shoulder seam disappears. Never put a cuff, logo, or hem there.
+- CUFF BANDS: if the design has ribbed cuffs, the band wraps ALL FOUR long faces at identical height, and the ARM BOTTOM inner face uses the same band color. Never a cuff on only one face.
+- LEG PANELS (pants): identical logic. The four long faces run hip → ankle in the same direction; waistband at the TOP row of all four faces at identical height; cuff/hem at the BOTTOM row of all four at identical height. LEG BOTTOM square = the foot opening, painted as the inner fabric/sole shadow tone — never a shoe, never a foot, never skin. LEG TOP square = the hip cap, continuing the waistband.
+- INNER vs OUTER SIDE: for each limb, one side face is the INNER side (faces the body) and one is the OUTER side (faces away). Side stripes, cargo pockets and piping belong on the OUTER side only, and must be MIRRORED to the correct outer side on the opposite limb — never on both inner sides, never on the same physical side twice.
+- Mirror check: after painting the left limb, mentally flip it and compare to the right limb. Front must map to front, outer to outer. A limb whose FRONT face is actually the BACK face flipped is REJECTED.
+- Sleeve length changes ONLY happen along the long axis, cutting all four long faces at the SAME height with one clean horizontal hem, plus keying out the BOTTOM face when the cut removes the cuff. Never cut a sleeve diagonally or at different heights per face.
+- SELF-CHECK: simulate folding each limb box back into 3D. Every seam must line up; the wrist ring must be one continuous band; nothing may read as "chopped", offset by a few pixels, or rotated 90°. Repaint until it folds cleanly.`;
+
+const LEARN_BLOCK = (rules: string[]) => `AUTO-LEARNING MEMORY (accumulated corrections from this creator's previous generations — treat as HARD RULES, they encode defects already observed and must never repeat):
+${rules.map((r, i) => `[L${i + 1}] ${r}`).join("\n")}
+- These learned rules take priority over generic style preferences. Every new generation must satisfy all of them in addition to the base checklist.`;
+
+const CATALOG_NOTE = `CATALOG REFERENCE CONTEXT: some of the attached reference images are real Roblox classic clothing assets pulled from the Roblox catalog for this brief. Study them for the platform-native conventions (panel proportions, how details are stylized at avatar scale, contrast level, how cuffs/collars/waistbands are drawn as flat art) and match that production standard — but design the requested garment from the user's brief, do NOT copy any catalog asset one-to-one.`;
+
+
 export const Route = createFileRoute("/api/generate-clothing")({
   server: {
     handlers: {
@@ -244,13 +285,23 @@ export const Route = createFileRoute("/api/generate-clothing")({
         const draActive = !!flags.dra && userRefs.length > 0;
         const inpaint = body.inpaint;
         const inpaintActive = !!inpaint?.baseImage && !!inpaint?.region;
+        const learned = (body.learned ?? [])
+          .map((r) => String(r).trim())
+          .filter(Boolean)
+          .slice(-14);
+        const learnActive = !!flags.learn && learned.length > 0;
         const flagBlocks = [
+          flags.chroma ? CHROMA_BLOCK : "",
+          flags.limb ? LIMB_BLOCK : "",
           flags.nac ? NAC_BLOCK : "",
-          flags.rpb ? RPB_BLOCK : "",
+          flags.rpb && !flags.chroma ? RPB_BLOCK : "",
           flags.rmtpc ? RMTPC_BLOCK : "",
           draActive ? DRA_BLOCK : "",
+          userRefs.length ? CATALOG_NOTE : "",
+          learnActive ? LEARN_BLOCK(learned) : "",
           inpaintActive ? INPAINT_BLOCK(inpaint!.region, inpaint!.refinement ?? "") : "",
         ].filter(Boolean).join("\n\n");
+
 
         // Extra grid-discipline nudge for GPT-Image (tends to stylize away from the template).
         const GPT_EXTRA = `\n\nSTRICT GRID LOCK (model-specific): The first attached image IS the canonical 585x559 UV template. Reproduce its outer composition, dotted cell borders, label positions, and aspect ratio with PIXEL-LEVEL fidelity. Do NOT crop, rescale, or recompose. Only fill the empty cells. Keep everything outside the labeled cells visually identical to the template image.`;

@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Loader2, Upload, X, Download, Shirt, Wand2, Copy, Check, Zap, Sparkles, ShieldCheck, Layers, Eye, ScanSearch, Paintbrush } from "lucide-react";
+import { Loader2, Upload, X, Download, Shirt, Wand2, Copy, Check, Zap, Sparkles, ShieldCheck, Layers, Eye, ScanSearch, Paintbrush, Search, Brain, Ruler, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { processAlpha, DEFAULT_ALPHA, type AlphaOptions } from "@/lib/alpha-engine";
+import { ISSUES, loadLearned, recordIssues, clearLearned, learnedRuleStrings, type IssueId, type LearnedRule } from "@/lib/learning";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,7 +39,28 @@ type ModelChoice = "gemini" | "gpt";
 const MODEL_STORAGE_KEY = "rogen.model";
 const FLAGS_STORAGE_KEY = "rogen.flags";
 
-type Flags = { nac: boolean; rpb: boolean; rmtpc: boolean; dra: boolean };
+type Flags = {
+  nac: boolean;
+  rpb: boolean;
+  rmtpc: boolean;
+  dra: boolean;
+  chroma: boolean;
+  limb: boolean;
+  learn: boolean;
+  catalog: boolean;
+};
+
+const DEFAULT_FLAGS: Flags = {
+  nac: true,
+  rpb: true,
+  rmtpc: true,
+  dra: true,
+  chroma: true,
+  limb: true,
+  learn: true,
+  catalog: true,
+};
+
 
 type InpaintRegion = "torso" | "right_arm" | "left_arm" | "right_leg" | "left_leg";
 
@@ -117,7 +142,10 @@ async function compositeRegion(
   });
 }
 
-async function normalizeTo585x559(b64: string): Promise<Blob> {
+async function normalizeTo585x559(
+  b64: string,
+  alpha: AlphaOptions | null,
+): Promise<{ blob: Blob; transparentPct: number }> {
   const img = new Image();
   img.src = `data:image/png;base64,${b64}`;
   await new Promise((res, rej) => {
@@ -127,23 +155,35 @@ async function normalizeTo585x559(b64: string): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = TARGET_W;
   canvas.height = TARGET_H;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.clearRect(0, 0, TARGET_W, TARGET_H);
   const scale = Math.max(TARGET_W / img.width, TARGET_H / img.height);
   const w = img.width * scale;
   const h = img.height * scale;
   const x = (TARGET_W - w) / 2;
   const y = (TARGET_H - h) / 2;
-  ctx.imageSmoothingEnabled = true;
+  // Nearest-neighbour keeps the chroma key pure (smoothing would create
+  // magenta-to-fabric gradients that survive the key).
+  ctx.imageSmoothingEnabled = !alpha;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, x, y, w, h);
-  return new Promise<Blob>((resolve, reject) => {
+
+  let transparentPct = 0;
+  if (alpha) {
+    const data = ctx.getImageData(0, 0, TARGET_W, TARGET_H);
+    transparentPct = processAlpha(data, alpha).transparentPct;
+    ctx.putImageData(data, 0, 0);
+  }
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("Falha ao gerar PNG"))),
       "image/png",
     );
   });
+  return { blob, transparentPct };
 }
+
 
 function slugify(s: string): string {
   return s
